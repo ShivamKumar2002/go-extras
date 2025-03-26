@@ -40,6 +40,7 @@ const vscode = acquireVsCodeApi();
 
 // --- DOM Element References ---
 const filterGroup = document.getElementById('filter-group') as CheckboxGroup | null;
+const textFilter = document.getElementById('text-filter') as Checkbox | null;
 const readFilter = document.getElementById('read-filter') as Checkbox | null;
 const writeFilter = document.getElementById('write-filter') as Checkbox | null;
 const referenceTree = document.getElementById('reference-tree') as Tree | null;
@@ -130,6 +131,7 @@ window.addEventListener('message', event => {
 // Listen for changes in the filter checkboxes
 filterGroup?.addEventListener('change', () => {
 	const filters = {
+		text: textFilter?.checked ?? false,
 		read: readFilter?.checked ?? false,
 		write: writeFilter?.checked ?? false,
 	};

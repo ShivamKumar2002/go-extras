@@ -23,9 +23,7 @@ Create a VSCode extension named "go-extras" that replicates Goland's "Filter Ref
 - Tree not visible in webview.
 - References data not being sent to webview on filter change.
 - If both read and write are unchecked and checked again, peek view doesn't open sometimes.
-- Write filter not detecting `delete(map, key)` format.
-- Write filter not detecting initialization in struct as write. Example: `mystruct{myMap: map[string]string}`.
-- Explore using official golang tools for parsing AST for detecting write (future improvement).
+
 
 ## 4. Remaining Tasks
 

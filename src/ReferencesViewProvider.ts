@@ -1,6 +1,13 @@
 import * as fs from 'fs';
 import * as vscode from 'vscode';
 
+enum Classification {
+	Unknown = -1,
+	Text = 0,
+	Read = 1,
+	Write = 2,
+}
+
 export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 
 	public static readonly viewType = 'goExtrasReferencesView';
@@ -12,8 +19,7 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 	private _currentRefs: vscode.Location[] = [];
 	private _originalUri?: vscode.Uri;
 	private _originalPosition?: vscode.Position;
-	private _filterState = { read: true, write: true };
-	private _classificationCache: Map<string, 'read' | 'write'> = new Map(); // Cache classification results
+	private _filterState = { read: true, write: true, text: true };
 
 	constructor(
 		private readonly _extensionContext: vscode.ExtensionContext, // Store context if needed later
@@ -57,7 +63,6 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 		this._currentRefs = refs;
 		this._originalUri = context.uri;
 		this._originalPosition = context.position;
-		this._classificationCache.clear(); // Clear cache for new reference set
 
 		if (this._view) {
 			// Pre-classify references before sending to webview (can take time)
@@ -93,7 +98,13 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 				return;
 			case 'requestClassification': // Example: If webview needs classification on demand
 				const loc = message.location as vscode.Location;
-				const classification = await this._classifyReference(loc);
+				let classification: Classification;
+				try {
+					classification = await this._classifyReferenceGopls(loc);
+				} catch(err) {
+					console.error("Error classifying reference at location:", loc, ", err:", err);
+					classification = Classification.Unknown;
+				}
 				this._postMessage({ type: 'classificationResult', uri: loc.uri.toString(), range: loc.range, classification });
 				return;
 			case 'showError': // Allow webview to show errors
@@ -144,9 +155,20 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 			}
 
 			// Filter by read/write classification
-			const classification = await this._classifyReference(loc);
-			if ((this._filterState.read && classification === 'read') ||
-				(this._filterState.write && classification === 'write')) {
+			let classification: Classification;
+			try {
+				classification = await this._classifyReferenceGopls(loc);
+			} catch(err) {
+				console.error("Error classifying reference at location:", loc, ", err:", err);
+				classification = Classification.Unknown;
+			}
+			
+			// TODO: remove this log later
+			console.debug(`Classification for ${loc.uri.fsPath}:${loc.range.start.line + 1}:${loc.range.start.character + 1}: ${classification}`);
+
+			if ((this._filterState.read && classification === Classification.Read) ||
+				(this._filterState.write && classification === Classification.Write) ||
+				(this._filterState.text && classification === Classification.Text)) {
 				filtered.push(loc);
 			}
 		}
@@ -154,66 +176,62 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	/**
-	 * Classifies a reference as 'read' or 'write' based on heuristics.
-	 * Caches results.
+	 * Accurately classifies a Go identifier reference at a given location as 'read' or 'write'
+	 * by leveraging the Go language server (gopls) via the 'textDocument/documentHighlight' LSP request.
+	 *
+	 * This approach relies on gopls correctly identifying and tagging symbol usages.
+	 *
+	 * @param location The precise location (URI and range) of the identifier reference.
+	 * @returns Classification of the reference as 'text', 'read', 'write', or 'unknown'.
 	 */
-	private async _classifyReference(location: vscode.Location): Promise<'read' | 'write'> {
-		const cacheKey = `${location.uri.toString()}#${location.range.start.line},${location.range.start.character}`;
-		if (this._classificationCache.has(cacheKey)) {
-			return this._classificationCache.get(cacheKey)!;
+	private async _classifyReferenceGopls(location: vscode.Location): Promise<Classification> {
+		const uri = location.uri;
+		// Use the start position of the range to request highlights
+		const position = location.range.start;
+
+		// Execute the command that triggers the 'textDocument/documentHighlight' LSP request
+		const highlights = await vscode.commands.executeCommand<vscode.DocumentHighlight[]>('vscode.executeDocumentHighlights', uri, position);
+
+		if (!highlights || highlights.length === 0) {
+			return Classification.Unknown; // Or potentially fallback to 'read'? 'unknown' is safer.
 		}
 
-		let classification: 'read' | 'write' = 'read'; // Default to read
+		// Find the specific highlight that matches the *exact* input range
+		let selectedHighlight = highlights.find(h => h.range.isEqual(location.range));
 
-		try {
-			const document = await vscode.workspace.openTextDocument(location.uri);
-			const lineText = document.lineAt(location.range.start.line).text;
-			const refText = document.getText(location.range); // The actual symbol text
-			const escapedRefText = this.escapeRegex(refText);
-
-			// --- Write Heuristics ---
-			// Remove comments and string literals for more reliable matching (basic approach)
-			const codePart = lineText.split('//')[0].replace(/".*?"/g, '""').replace(/`.*?`/g, '``');
-
-			// 1. Assignment (=, :=, op=)
-			// Ensure the reference is on the left-hand side before the assignment operator
-			const assignMatch = codePart.match(new RegExp(`(^|\\W)${escapedRefText}\\b.*?(=|:=)`));
-			if (assignMatch) {
-				const textBeforeAssign = codePart.substring(0, assignMatch.index! + assignMatch[0].length);
-				// Check if it's a simple assignment or part of a comparison
-				if (!/==|!=|<=|>=/.test(textBeforeAssign.slice(-3))) { // Check chars around '='
-					classification = 'write';
-				}
+		if (!selectedHighlight) {
+			// This might happen if the location is slightly off, or gopls doesn't highlight
+			// this specific instance for some reason (e.g., it's a comment, string, or part of a package name)
+			// Or if the input location range doesn't exactly match what gopls considers the symbol range.
+			// Fallback: Check if *any* highlight at this position indicates a write.
+			// This is less precise but might catch cases where ranges differ slightly.
+			const overlappingHighlight = highlights.find(h => h.range.contains(position));
+			if (overlappingHighlight) {
+				selectedHighlight = overlappingHighlight;
 			}
-
-			// 2. Increment/Decrement (var++, var--)
-			if (classification === 'read' && new RegExp(`\\b${escapedRefText}(?:\\+\\+|--)`).test(codePart)) {
-				classification = 'write';
-			}
-
-			// 3. Slice append assignment (slice = append(slice, ...))
-			if (classification === 'read') {
-				const appendRegex = new RegExp(`\\b${escapedRefText}\\b\\s*=\\s*append\\s*\\(\\s*${escapedRefText}\\b`);
-				if (appendRegex.test(codePart)) {
-					classification = 'write';
-				}
-			}
-
-			// 4. Address taken and passed to function (func(&var)) - Weak heuristic
-			// This is difficult to do reliably without parsing. We check if '&var' appears.
-			// if (classification === 'read' && new RegExp(`&${escapedRefText}\\b`).test(codePart)) {
-			// 	// Could potentially be a write, but often isn't. Maybe keep as 'read' unless stronger evidence?
-			// 	// For now, let's keep it conservative and default to 'read'.
-			// }
-
-
-		} catch (error) {
-			console.warn(`Could not classify reference at ${location.uri.fsPath}:${location.range.start.line + 1}: ${error}`);
-			// Default to 'read' on error, which is already set
 		}
 
-		this._classificationCache.set(cacheKey, classification);
-		return classification;
+		if (!selectedHighlight) {
+			return Classification.Unknown;
+		}
+
+		// We found the exact highlight for our input location range
+		switch (selectedHighlight.kind) {
+			case vscode.DocumentHighlightKind.Write:
+				// This includes assignments (=, :=), increment/decrement (++ --),
+				// declarations (var x = ..., x := ...), function parameters being set in a call, etc.
+				return Classification.Write;
+
+			case vscode.DocumentHighlightKind.Read:
+				// Used in expressions, conditions, function calls (reading the value), etc.
+				return Classification.Read;
+
+			case vscode.DocumentHighlightKind.Text:
+				return Classification.Text;
+
+			default:
+				return Classification.Unknown;
+		}
 	}
 
 	/**
@@ -242,11 +260,11 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 			console.log("No filtered locations to show in peek view.");
 			// Optionally close existing peek:
 			vscode.commands.executeCommand('closeReferenceSearch').then(undefined, err => {
-                // Ignore errors if the peek view wasn't open
-                if (err.message !== 'No reference search is active.') {
-                    console.error("Error closing reference search:", err);
-                }
-            });
+				// Ignore errors if the peek view wasn't open
+				if (err.message !== 'No reference search is active.') {
+					console.error("Error closing reference search:", err);
+				}
+			});
 		}
 	}
 
@@ -303,11 +321,6 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 		}
 
 		return htmlContent;
-	}
-
-	// Helper to escape regex special characters
-	private escapeRegex(string: string): string {
-		return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
 	}
 }
 
