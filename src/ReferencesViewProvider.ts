@@ -65,13 +65,8 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 		this._originalPosition = context.position;
 
 		if (this._view) {
-			// Pre-classify references before sending to webview (can take time)
-			// Or send raw refs and let webview request classification as needed
-			// For simplicity, let's send raw refs for now.
-			this._postMessage({ type: 'updateRefs', refs: this._currentRefs });
-
 			// Trigger initial filtering and peek view update
-			await this.filterAndShowPeekView();
+			await this.filterAndUpdateViews();
 		}
 	}
 
@@ -83,29 +78,29 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 			case 'webviewReady':
 				// Webview is ready, send initial data if we have it
 				if (this._currentRefs.length > 0) {
-					this._postMessage({ type: 'updateRefs', refs: this._currentRefs });
-					await this.filterAndShowPeekView(); // Show initial peek view
+					await this.filterAndUpdateViews(); // Show initial peek view
 				}
 				return;
 			case 'filtersChanged':
 				this._filterState = message.filters;
-				console.log('Filters changed:', this._filterState);
-				await this.filterAndShowPeekView();
+				console.log('Provider received filters changed:', this._filterState);
+				// Update both the webview tree and the peek view based on new filters
+				await this.filterAndUpdateViews(); // New method to handle both updates
 				return;
 			case 'fileSelected':
 				console.log('File selected:', message.path);
-				await this.filterAndShowPeekView(message.path || undefined); // Use undefined for "all files"
+				await this.filterAndUpdateViews(message.path || undefined); // Use undefined for "all files"
 				return;
 			case 'requestClassification': // Example: If webview needs classification on demand
 				const loc = message.location as vscode.Location;
 				let classification: Classification;
 				try {
 					classification = await this._classifyReferenceGopls(loc);
-				} catch(err) {
+				} catch (err) {
 					console.error("Error classifying reference at location:", loc, ", err:", err);
 					classification = Classification.Unknown;
 				}
-				this._postMessage({ type: 'classificationResult', uri: loc.uri.toString(), range: loc.range, classification });
+				await this._postMessage({ type: 'classificationResult', uri: loc.uri.toString(), range: loc.range, classification });
 				return;
 			case 'showError': // Allow webview to show errors
 				vscode.window.showErrorMessage(message.text);
@@ -114,32 +109,38 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	/**
-	 * Filters references based on current state and optional file path, then shows Peek View.
-	 */
-	private async filterAndShowPeekView(filePath?: string) {
-		if (!this._view) {
-			return;
-		} // No view to update
-
+		* Filters references based on current state, updates webview tree, and shows Peek View.
+		*/
+	private async filterAndUpdateViews(filePath?: string) {
 		vscode.window.withProgress({
 			location: { viewId: ReferencesViewProvider.viewType }, // Show progress in our view
 			title: "Filtering references...",
 		}, async (progress) => {
 			try {
+				// Filter based on the latest _filterState and optional filePath
 				const filteredLocations = await this._filterReferences(filePath);
-				console.log("Filtered locations for webview: ", filteredLocations);
+
+				// 1. Update the webview's tree
+				console.log("Sending filtered refs to webview:", filteredLocations);
+				await this._postMessage({ type: 'updateRefs', refs: filteredLocations });
+
+				// 2. Update the Peek View
 				this._showPeekView(filteredLocations);
+
 			} catch (error) {
 				console.error("Error filtering references:", error);
 				vscode.window.showErrorMessage(`Error filtering references: ${error instanceof Error ? error.message : String(error)}`);
+				// Optionally clear views on error
+				await this._postMessage({ type: 'updateRefs', refs: [] });
+				this._showPeekView([]);
 			}
 		});
 	}
 
-
 	/**
-	 * Filters the stored references based on the current filter state and optional file path.
-	 */
+		* Filters the stored references based on the current filter state and optional file path.
+		* This is now primarily used internally by filterAndUpdateViews and filterAndShowPeekView.
+		*/
 	private async _filterReferences(filePath?: string): Promise<vscode.Location[]> {
 		if (!this._filterState.read && !this._filterState.write) {
 			return []; // Nothing to show if both are off
@@ -158,11 +159,11 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 			let classification: Classification;
 			try {
 				classification = await this._classifyReferenceGopls(loc);
-			} catch(err) {
+			} catch (err) {
 				console.error("Error classifying reference at location:", loc, ", err:", err);
 				classification = Classification.Unknown;
 			}
-			
+
 			// TODO: remove this log later
 			console.debug(`Classification for ${loc.uri.fsPath}:${loc.range.start.line + 1}:${loc.range.start.character + 1}: ${classification}`);
 
@@ -271,9 +272,12 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 	/**
 	 * Sends a message to the webview.
 	 */
-	private _postMessage(message: any) {
+	private async _postMessage(message: any) {
 		if (this._view) {
-			this._view.webview.postMessage(message);
+			const sent = await this._view.webview.postMessage(message);
+			if (!sent) {
+				console.error("Failed to post message to webview:", message);
+			}
 		} else {
 			console.warn("Attempted to post message, but webview is not available.");
 		}
@@ -284,7 +288,7 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 	 */
 	private _getHtmlForWebview(webview: vscode.Webview): string {
 		// Get URIs for assets in the 'dist' folder that the webview needs to reference
-		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview.js'));
+		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'ReferencesWebview.js'));
 		const codiconsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'codicon.css'));
 		// const stylesUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'styles.css')); // If you add styles
 
@@ -292,7 +296,7 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 		const nonce = getNonce();
 
 		// Path to the index.html file within the 'dist' directory
-		const htmlPathOnDisk = vscode.Uri.joinPath(this._extensionUri, 'dist', 'index.html');
+		const htmlPathOnDisk = vscode.Uri.joinPath(this._extensionUri, 'dist', 'references.html');
 		let htmlContent: string;
 
 		try {

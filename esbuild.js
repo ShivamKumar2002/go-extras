@@ -30,7 +30,7 @@ const esbuildProblemMatcherPlugin = {
 // Function to copy assets
 async function copyAssets() {
 	const assets = [
-		{ from: 'webview-ui/index.html', to: 'dist/index.html' },
+		{ from: 'webview-ui/references.html', to: 'dist/references.html' },
 		// { from: 'webview-ui/styles.css', to: 'dist/styles.css' }, // Uncomment if styles.css is created
 		{ from: path.join('node_modules', '@vscode', 'codicons', 'dist', 'codicon.css'), to: path.join('dist', 'codicon.css') },
 		{ from: path.join('node_modules', '@vscode', 'codicons', 'dist', 'codicon.ttf'), to: path.join('dist', 'codicon.ttf') },
@@ -68,54 +68,30 @@ async function main() {
 		process.exit(1); // Exit if asset copying fails critically
 	}
 
-
-	const sharedConfig = {
+	const ctx = await esbuild.context({
+		entryPoints: [
+			'src/extension.ts',
+			'src/ReferencesWebview.ts'
+		],
 		bundle: true,
+		format: 'cjs',
 		minify: production,
 		sourcemap: !production,
-		sourcesContent: false, // Reduces sourcemap size
-		logLevel: 'silent', // Use plugin for errors
-		plugins: [esbuildProblemMatcherPlugin],
-	};
-
-	// Context for the extension host
-	const extensionCtx = await esbuild.context({
-		...sharedConfig,
-		entryPoints: ['src/extension.ts'],
-		format: 'cjs',
+		sourcesContent: false,
 		platform: 'node',
-		outfile: 'dist/extension.js',
+		outdir: 'dist',
 		external: ['vscode'],
+		logLevel: 'silent',
+		plugins: [
+			/* add to the end of plugins array */
+			esbuildProblemMatcherPlugin,
+		],
 	});
-
-	// Context for the webview
-	const webviewCtx = await esbuild.context({
-		...sharedConfig,
-		entryPoints: ['webview-ui/main.mts'], // Use the new .mts file
-		format: 'esm', // ES Module for modern webviews
-		platform: 'browser',
-		outfile: 'dist/webview.js',
-		// external: [], // No externals for webview bundle usually
-	});
-
 	if (watch) {
-		console.log('[watch] Watching for changes...');
-		await Promise.all([
-			await extensionCtx.watch(),
-			await webviewCtx.watch()
-			// Note: Asset changes currently require a restart of the watch process
-		]);
+		await ctx.watch();
 	} else {
-		console.log('[build] Building extension and webview...');
-		await Promise.all([
-			await extensionCtx.rebuild(),
-			await webviewCtx.rebuild()
-		]);
-		console.log('[build] Build complete.');
-		await Promise.all([
-			await extensionCtx.dispose(),
-			await webviewCtx.dispose()
-		]);
+		await ctx.rebuild();
+		await ctx.dispose();
 	}
 }
 

@@ -20,9 +20,8 @@ Create a VSCode extension named "go-extras" that replicates Goland's "Filter Ref
   
 ## 3. Current Issues
 
-- Tree not visible in webview.
-- References data not being sent to webview on filter change.
-- If both read and write are unchecked and checked again, peek view doesn't open sometimes.
+- Peek view has glitches. If it is open, and one of the filters is toggled, then it closes automatically.
+- Clicking on filename in tree re-renders the tree and hence unable to see child.
 
 
 ## 4. Remaining Tasks

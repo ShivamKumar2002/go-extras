@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8">
+
+	<!--
+		Use a content security policy to only allow loading styles from our extension directory,
+		and only allow scripts that have a specific nonce.
+		(Nonce will be injected by the ReferencesViewProvider)
+	-->
+	<meta http-equiv="Content-Security-Policy" content="
+		default-src 'none';
+		font-src {{cspSource}};
+		style-src {{cspSource}} 'unsafe-inline';
+		script-src 'nonce-{{nonce}}';
+	">
+
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+	<!--
+		These links point to files that esbuild will copy/create in the 'dist' directory.
+		The URIs will be resolved by the webview using asWebviewUri in the provider.
+	-->
+	<link href="{{codiconsUri}}" rel="stylesheet" />
+	<!-- <link href="styles.css" rel="stylesheet"> -->
+
+	<title>Go References</title>
+</head>
+
+<body>
+	<vscode-checkbox-group id="filter-group" aria-label="Reference Type Filters">
+		<vscode-checkbox id="text-filter" label="Text" value="text" checked></vscode-checkbox>
+		<vscode-checkbox id="read-filter" label="Read" value="read" checked></vscode-checkbox>
+		<vscode-checkbox id="write-filter" label="Write" value="write" checked></vscode-checkbox>
+	</vscode-checkbox-group>
+
+	<vscode-tree id="reference-tree" indent-guides arrows>
+		<!-- Tree content will be populated by main.ts -->
+	</vscode-tree>
+
+	<!-- Nonce will be injected by the ReferencesViewProvider -->
+	<script nonce="{{nonce}}" src="{{scriptUri}}"></script>
+</body>
+
+</html>
