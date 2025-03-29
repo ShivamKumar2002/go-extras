@@ -13,7 +13,6 @@ interface VSCodeLocation {
 		path: string;
 		query: string;
 		fragment: string;
-		fsPath: string; // Most useful for display
 	};
 	range: [
 		{ line: number; character: number }, // Start
@@ -41,7 +40,7 @@ function buildTreeData(refs: VSCodeLocation[]): TreeItemData[] {
 	const fileMap = new Map<string, { label: string; value: string; subItems: TreeItemData[] }>();
 
 	for (const ref of refs) {
-		const filePath = ref.uri.fsPath;
+		const filePath = ref.uri.path;
 		const fileName = filePath.substring(filePath.lastIndexOf('/') + 1); // Basic filename extraction
 		const lineNum = ref.range[0].line + 1; // 1-based line number
 		const charNum = ref.range[0].character + 1;
@@ -138,7 +137,6 @@ function buildTreeData(refs: VSCodeLocation[]): TreeItemData[] {
 
 	// Listen for messages from the extension host
 	window.addEventListener('message', event => {
-		console.log("Webview received event:");
 		const message = event.data; // The JSON data that the extension sent
 
 		switch (message.type) {

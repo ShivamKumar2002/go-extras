@@ -8,6 +8,22 @@ enum Classification {
 	Write = 2,
 }
 
+class FilterState {
+	read: boolean;
+	write: boolean;
+	text: boolean;
+
+	constructor(read?: boolean, write?: boolean, text?: boolean) {
+		this.read = read ?? true;
+		this.write = write ?? true;
+		this.text = text ?? true;
+	}
+
+	compare(other: FilterState): boolean {
+		return this.read === other.read && this.write === other.write && this.text === other.text;
+	};
+}
+
 export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 
 	public static readonly viewType = 'goExtrasReferencesView';
@@ -19,7 +35,7 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 	private _currentRefs: vscode.Location[] = [];
 	private _originalUri?: vscode.Uri;
 	private _originalPosition?: vscode.Position;
-	private _filterState = { read: true, write: true, text: true };
+	private _filterState = new FilterState();
 
 	constructor(
 		private readonly _extensionContext: vscode.ExtensionContext, // Store context if needed later
@@ -74,23 +90,31 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 	 * Handles messages received from the webview UI.
 	 */
 	public async handleMessage(message: any) {
+		console.log("Provider received message from webview:", message);
 		switch (message.type) {
 			case 'webviewReady':
 				// Webview is ready, send initial data if we have it
 				if (this._currentRefs.length > 0) {
-					await this.filterAndUpdateViews(); // Show initial peek view
+					this.filterAndUpdateViews(); // Show initial peek view
 				}
 				return;
+
 			case 'filtersChanged':
-				this._filterState = message.filters;
+				if (this._filterState.compare(message.filters)) {
+					return;
+				}
+				this._filterState.read = message.filters.read;
+				this._filterState.write = message.filters.write;
+				this._filterState.text = message.filters.text;
 				console.log('Provider received filters changed:', this._filterState);
-				// Update both the webview tree and the peek view based on new filters
-				await this.filterAndUpdateViews(); // New method to handle both updates
+				this.filterAndUpdateViews();
 				return;
+
 			case 'fileSelected':
 				console.log('File selected:', message.path);
-				await this.filterAndUpdateViews(message.path || undefined); // Use undefined for "all files"
+				this.filterAndUpdateViews(message.path || undefined); // Use undefined for "all files"
 				return;
+
 			case 'requestClassification': // Example: If webview needs classification on demand
 				const loc = message.location as vscode.Location;
 				let classification: Classification;
@@ -102,27 +126,40 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 				}
 				await this._postMessage({ type: 'classificationResult', uri: loc.uri.toString(), range: loc.range, classification });
 				return;
+
 			case 'showError': // Allow webview to show errors
 				vscode.window.showErrorMessage(message.text);
 				return;
 		}
 	}
 
+	// TODO: This is not working, fix it
+	private _hidePeekView() {
+		vscode.commands.executeCommand('closeReferenceSearch');
+	}
+
 	/**
 		* Filters references based on current state, updates webview tree, and shows Peek View.
 		*/
 	private async filterAndUpdateViews(filePath?: string) {
-		vscode.window.withProgress({
+		// Do nothing if there are no references
+		if (!this._currentRefs) {
+			return;
+		}
+
+		await vscode.window.withProgress({
 			location: { viewId: ReferencesViewProvider.viewType }, // Show progress in our view
 			title: "Filtering references...",
 		}, async (progress) => {
 			try {
+				// Clear views before filtering
+				this._hidePeekView();
+
 				// Filter based on the latest _filterState and optional filePath
 				const filteredLocations = await this._filterReferences(filePath);
 
 				// 1. Update the webview's tree
-				console.log("Sending filtered refs to webview:", filteredLocations);
-				await this._postMessage({ type: 'updateRefs', refs: filteredLocations });
+				this._postMessage({ type: 'updateRefs', refs: filteredLocations });
 
 				// 2. Update the Peek View
 				this._showPeekView(filteredLocations);
@@ -132,7 +169,7 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 				vscode.window.showErrorMessage(`Error filtering references: ${error instanceof Error ? error.message : String(error)}`);
 				// Optionally clear views on error
 				await this._postMessage({ type: 'updateRefs', refs: [] });
-				this._showPeekView([]);
+				this._hidePeekView();
 			}
 		});
 	}
@@ -142,8 +179,8 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 		* This is now primarily used internally by filterAndUpdateViews and filterAndShowPeekView.
 		*/
 	private async _filterReferences(filePath?: string): Promise<vscode.Location[]> {
-		if (!this._filterState.read && !this._filterState.write) {
-			return []; // Nothing to show if both are off
+		if (!this._filterState.read && !this._filterState.write && !this._filterState.text) {
+			return []; // Nothing to show if all filters are off
 		}
 
 		const targetUriString = filePath ? vscode.Uri.file(filePath).toString() : undefined;
@@ -165,7 +202,7 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 			}
 
 			// TODO: remove this log later
-			console.debug(`Classification for ${loc.uri.fsPath}:${loc.range.start.line + 1}:${loc.range.start.character + 1}: ${classification}`);
+			// console.debug(`Classification for ${loc.uri.fsPath}:${loc.range.start.line + 1}:${loc.range.start.character + 1}: ${classification}`);
 
 			if ((this._filterState.read && classification === Classification.Read) ||
 				(this._filterState.write && classification === Classification.Write) ||
@@ -244,29 +281,21 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 			return;
 		}
 
-		// Dismiss existing peek view before showing a new one? Maybe not necessary.
-		// await vscode.commands.executeCommand('closeReferenceSearch');
-
-		if (locationsToShow.length > 0) {
-			vscode.commands.executeCommand(
-				'editor.action.peekLocations',
-				this._originalUri,      // URI of the document where the command was invoked
-				this._originalPosition, // Position in that document
-				locationsToShow,        // Locations to show in the peek view
-				'peek'                  // 'peek' or 'goto', 'gotoAndPeek'
-			);
-		} else {
+		if (!locationsToShow) {
 			// If no locations match the filter, maybe just close the peek view?
 			// Or show a message? For now, just don't execute the command.
 			console.log("No filtered locations to show in peek view.");
-			// Optionally close existing peek:
-			vscode.commands.executeCommand('closeReferenceSearch').then(undefined, err => {
-				// Ignore errors if the peek view wasn't open
-				if (err.message !== 'No reference search is active.') {
-					console.error("Error closing reference search:", err);
-				}
-			});
+			return;
 		}
+
+		console.log("Peek view locations:", locationsToShow);
+		vscode.commands.executeCommand(
+			'editor.action.showReferences',
+			this._originalUri,      // URI of the document where the command was invoked
+			this._originalPosition, // Position in that document
+			locationsToShow,        // Locations to show in the peek view
+			'peek'                  // 'peek' or 'goto', 'gotoAndPeek'
+		);
 	}
 
 	/**
