@@ -133,9 +133,10 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 		}
 	}
 
-	// TODO: This is not working, fix it
 	private _hidePeekView() {
-		vscode.commands.executeCommand('closeReferenceSearch');
+		vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup').then(() => {
+			vscode.commands.executeCommand('closeReferenceSearch');
+		});
 	}
 
 	/**
