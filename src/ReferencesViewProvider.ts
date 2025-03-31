@@ -81,11 +81,8 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 		this._originalPosition = context.position;
 
 		if (this._view) {
-			// Update the webview with the new references
-			await this._postMessage({ type: 'updateRefs', refs: this._currentRefs });
-			
 			// Apply initial filtering and update peek view
-			await this.filterAndUpdatePeekView();
+			await this.filterAndUpdatePeekView(undefined, undefined, true);
 		}
 	}
 
@@ -98,8 +95,7 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 			case 'webviewReady':
 				// Webview is ready, send initial data if we have it
 				if (this._currentRefs.length > 0) {
-					await this._postMessage({ type: 'updateRefs', refs: this._currentRefs });
-					this.filterAndUpdatePeekView(); // Show initial peek view
+					await this.filterAndUpdatePeekView(undefined, undefined, true); // Show initial peek view
 				}
 				return;
 
@@ -111,12 +107,12 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 				this._filterState.write = message.filters.write;
 				this._filterState.text = message.filters.text;
 				console.log('Provider received filters changed:', this._filterState);
-				this.filterAndUpdatePeekView();
+				await this.filterAndUpdatePeekView(undefined, undefined, true);
 				return;
 
 			case 'vscSelectEvent':
 				console.log('Tree item selected:', message.path);
-				this.filterAndUpdatePeekView(message.path || undefined, message.isDirectory || false); 
+				await this.filterAndUpdatePeekView(message.path || undefined, message.isDirectory || false); 
 				return;
 
 			case 'requestClassification': // Example: If webview needs classification on demand
@@ -145,9 +141,9 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 
 	/**
 	 * Filters references based on current state and updates the Peek View only.
-	 * The webview tree is only updated when original references change.
+	 * If updateWebview is true, also updates the webview tree with filtered locations.
 	 */
-	private async filterAndUpdatePeekView(filePath?: string, isDirectory: boolean = false) {
+	private async filterAndUpdatePeekView(filePath?: string, isDirectory: boolean = false, updateWebview: boolean = false) {
 		// Do nothing if there are no references
 		if (!this._currentRefs) {
 			return;
@@ -163,6 +159,11 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 
 				// Filter based on the latest _filterState and optional filePath
 				const filteredLocations = await this._filterReferences(filePath, isDirectory);
+
+				if (updateWebview) {
+					// update webview tree with filtered locations
+					await this._postMessage({ type: 'updateRefs', refs: filteredLocations });
+				}
 
 				// Update the Peek View only
 				this._showPeekView(filteredLocations);
