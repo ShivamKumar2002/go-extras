@@ -1,16 +1,24 @@
 {
   "name": "go-extras",
-  "displayName": "GO Extras",
-  "description": "Extends functionality of Go Extension in VSCode",
-  "version": "0.0.1",
+  "displayName": "Go Extras",
+  "description": "Advanced Go development features that extend beyond the official VS Code Go extension.",
+  "publisher": "shivamkumar",
+  "version": "1.0.0",
+  "icon": "images/logo.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ShivamKumar2002/go-extras.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ShivamKumar2002/go-extras/issues"
+  },
   "engines": {
     "vscode": "^1.98.0"
   },
   "categories": [
-    "Other"
+    "Programming Languages"
   ],
-  "activationEvents": [
-  ],
+  "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -49,7 +57,7 @@
       "goExtrasPanel": [
         {
           "id": "goExtrasReferencesView",
-          "name": "Go Extras: Filtered References",
+          "name": "Filtered References",
           "type": "webview",
           "icon": "$(list-filter)",
           "contextualTitle": "Go References"
