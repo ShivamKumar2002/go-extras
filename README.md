@@ -11,6 +11,19 @@ A Visual Studio Code extension that provides advanced Go development features th
 
 Go Extras enhances the Go development experience in VS Code by adding powerful features not found in the standard toolset. This extension will grow over time to include various capabilities that make Go development more productive and insightful. The initial release focuses on improving symbol reference analysis with intelligent filtering options.
 
+## Installation
+
+You can install Go Extras directly from the [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=shivamkumar.go-extras):
+
+* Open VS Code
+* Go to Extensions (Ctrl+Shift+X / Cmd+Shift+X)
+* Search for "Go Extras"
+* Click Install
+
+Alternatively, you can install the extension using the VS Code Quick Open (Ctrl+P / Cmd+P):
+```
+ext install shivamkumar.go-extras
+```
 
 ### Capabilities
 
