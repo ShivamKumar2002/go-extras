@@ -13,7 +13,8 @@
 ## Build Tooling
 - **Bundler**: esbuild (configured in `esbuild.js`)
 - **Output Format**: CommonJS (for both extension and webview)
-- **Assets**: Copied via custom script in `esbuild.js`
+- **Assets**: Copies `references.html`, `codicon.css`, `codicon.ttf` to `dist` directory.
+- **Problem Matcher**: Includes `esbuildProblemMatcherPlugin` for better error reporting in watch mode.
 
 ## Development Setup
 1. **Requirements**:

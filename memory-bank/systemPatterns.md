@@ -11,19 +11,22 @@ The extension consists of three main components:
 2. **Webview View Provider (`src/ReferencesViewProvider.ts`)**:
    - Manages webview lifecycle
    - Generates HTML with injected resources
-   - Handles state (references, filters)
+   - Manages filter state using a `FilterState` class.
    - Bridges communication with webview
    - Performs LSP-based classification (`_classifyReferenceGopls`)
-   - Filters references based on UI state
-   - Controls Peek View (`editor.action.showReferences`)
+   - Filters references based on UI state and optional file/directory path.
+   - Manages Peek View display.
 
 3. **Webview UI (`src/ReferencesWebview.ts` + `webview-ui/references.html`)**:
    - Renders filter controls (`vscode-checkbox-group`)
    - Displays reference tree (`vscode-tree`)
    - Communicates with provider via `acquireVsCodeApi`
    - Builds tree data structure (`buildTreeData`)
+   - Implements path compression for directory tree nodes.
+   - Replaces the entire tree data structure on updates.
 
 ## Communication Flow
+
 ```mermaid
 graph LR
     A[User Action] --> B(extension.ts)
@@ -43,7 +46,8 @@ graph LR
     D -- _showPeekView --> I(Peek View)
 
     F -- User Interaction --> E
-    E -- filtersChanged/fileSelected --> D
+    E -- filtersChanged --> D
+    E -- vscSelectEvent --> D
     D -- handleMessage --> D
     D -- filterAndUpdateViews --> D
 
@@ -58,3 +62,5 @@ graph LR
 2. **CSP-Secure Webview**: HTML uses strict CSP with nonce for scripts
 3. **View Provider Pattern**: Dedicated class manages webview lifecycle
 4. **Message-Based Communication**: Webview and extension communicate via `postMessage`
+5. **Directory Path Compression**: The webview UI merges intermediate directories with single children into a single tree node label (e.g., `src/app/components/`) for brevity.
+6. **Full Tree Data Replacement**: The webview UI re-renders the tree by replacing the entire data structure on each update.
