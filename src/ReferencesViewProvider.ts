@@ -81,8 +81,11 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 		this._originalPosition = context.position;
 
 		if (this._view) {
-			// Trigger initial filtering and peek view update
-			await this.filterAndUpdateViews();
+			// Update the webview with the new references
+			await this._postMessage({ type: 'updateRefs', refs: this._currentRefs });
+			
+			// Apply initial filtering and update peek view
+			await this.filterAndUpdatePeekView();
 		}
 	}
 
@@ -95,7 +98,8 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 			case 'webviewReady':
 				// Webview is ready, send initial data if we have it
 				if (this._currentRefs.length > 0) {
-					this.filterAndUpdateViews(); // Show initial peek view
+					await this._postMessage({ type: 'updateRefs', refs: this._currentRefs });
+					this.filterAndUpdatePeekView(); // Show initial peek view
 				}
 				return;
 
@@ -107,12 +111,12 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 				this._filterState.write = message.filters.write;
 				this._filterState.text = message.filters.text;
 				console.log('Provider received filters changed:', this._filterState);
-				this.filterAndUpdateViews();
+				this.filterAndUpdatePeekView();
 				return;
 
-			case 'fileSelected':
-				console.log('File selected:', message.path);
-				this.filterAndUpdateViews(message.path || undefined); // Use undefined for "all files"
+			case 'vscSelectEvent':
+				console.log('Tree item selected:', message.path);
+				this.filterAndUpdatePeekView(message.path || undefined, message.isDirectory || false); 
 				return;
 
 			case 'requestClassification': // Example: If webview needs classification on demand
@@ -140,9 +144,10 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	/**
-		* Filters references based on current state, updates webview tree, and shows Peek View.
-		*/
-	private async filterAndUpdateViews(filePath?: string) {
+	 * Filters references based on current state and updates the Peek View only.
+	 * The webview tree is only updated when original references change.
+	 */
+	private async filterAndUpdatePeekView(filePath?: string, isDirectory: boolean = false) {
 		// Do nothing if there are no references
 		if (!this._currentRefs) {
 			return;
@@ -157,40 +162,62 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 				this._hidePeekView();
 
 				// Filter based on the latest _filterState and optional filePath
-				const filteredLocations = await this._filterReferences(filePath);
+				const filteredLocations = await this._filterReferences(filePath, isDirectory);
 
-				// 1. Update the webview's tree
-				this._postMessage({ type: 'updateRefs', refs: filteredLocations });
-
-				// 2. Update the Peek View
+				// Update the Peek View only
 				this._showPeekView(filteredLocations);
 
 			} catch (error) {
 				console.error("Error filtering references:", error);
 				vscode.window.showErrorMessage(`Error filtering references: ${error instanceof Error ? error.message : String(error)}`);
-				// Optionally clear views on error
-				await this._postMessage({ type: 'updateRefs', refs: [] });
+				// Clear peek view on error
 				this._hidePeekView();
 			}
 		});
 	}
 
 	/**
-		* Filters the stored references based on the current filter state and optional file path.
-		* This is now primarily used internally by filterAndUpdateViews and filterAndShowPeekView.
-		*/
-	private async _filterReferences(filePath?: string): Promise<vscode.Location[]> {
+	 * Filters the stored references based on the current filter state and optional file path.
+	 * This is now primarily used internally by filterAndUpdateViews and filterAndShowPeekView.
+	 */
+	private async _filterReferences(filePath?: string, isDirectory: boolean = false): Promise<vscode.Location[]> {
 		if (!this._filterState.read && !this._filterState.write && !this._filterState.text) {
 			return []; // Nothing to show if all filters are off
 		}
 
-		const targetUriString = filePath ? vscode.Uri.file(filePath).toString() : undefined;
+		console.log(`Filtering references with path: ${filePath}, isDirectory: ${isDirectory}`);
+		
+		// Convert file path to URI if provided
+		const targetUri = filePath ? vscode.Uri.file(filePath) : undefined;
 		const filtered: vscode.Location[] = [];
 
 		for (const loc of this._currentRefs) {
 			// Filter by file path if provided
-			if (targetUriString && loc.uri.toString() !== targetUriString) {
-				continue;
+			if (targetUri) {
+				if (isDirectory) {
+					// For directories, check if the location URI's path starts with the target directory path
+					// We need to ensure we match at directory boundaries
+					const targetDirPath = targetUri.path.endsWith('/') ? targetUri.path : targetUri.path + '/';
+					const locPath = loc.uri.path;
+					
+					// Debug log for path matching
+					console.log(`Comparing dir paths - Target: ${targetDirPath}, Location: ${locPath}, startsWith: ${locPath.startsWith(targetDirPath)}`);
+					
+					if (!locPath.startsWith(targetDirPath)) {
+						continue;
+					}
+				} else {
+					// For files, exact path matching is required (normalizing both paths)
+					const targetPath = targetUri.path;
+					const locPath = loc.uri.path;
+					
+					// Debug log for file matching
+					console.log(`Comparing file paths - Target: ${targetPath}, Location: ${locPath}, equal: ${locPath === targetPath}`);
+					
+					if (locPath !== targetPath) {
+						continue;
+					}
+				}
 			}
 
 			// Filter by read/write classification
@@ -202,15 +229,14 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 				classification = Classification.Unknown;
 			}
 
-			// TODO: remove this log later
-			// console.debug(`Classification for ${loc.uri.fsPath}:${loc.range.start.line + 1}:${loc.range.start.character + 1}: ${classification}`);
-
 			if ((this._filterState.read && classification === Classification.Read) ||
 				(this._filterState.write && classification === Classification.Write) ||
 				(this._filterState.text && classification === Classification.Text)) {
 				filtered.push(loc);
 			}
 		}
+		
+		console.log(`Filtered ${this._currentRefs.length} references down to ${filtered.length}`);
 		return filtered;
 	}
 

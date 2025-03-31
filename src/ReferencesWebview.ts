@@ -3,8 +3,6 @@ import '@vscode-elements/elements/dist/vscode-checkbox';
 import '@vscode-elements/elements/dist/vscode-checkbox-group';
 import '@vscode-elements/elements/dist/vscode-tree';
 
-declare const acquireVsCodeApi: () => any;
-
 // Define the structure for VS Code Location data (simplified)
 interface VSCodeLocation {
 	uri: {
@@ -31,53 +29,194 @@ interface TreeItemData {
 	// Add classification later if needed directly in tree
 }
 
+// TODO: Maybe should use type from library, but getting errors when trying to import
+// So just leave it as is for now.
+// Define the vscode tree select event structure based on library docs
+interface VscTreeSelectEventDetail {
+  icons: {
+    branch?: string;
+    open?: string;
+    leaf?: string;
+  };
+  itemType: 'branch' | 'leaf';
+  label: string;
+  open: boolean;
+  value: string;
+  path: string;
+}
+
 // --- Helper Functions ---
 
 /**
- * Transforms VSCodeLocation[] into the nested structure required by vscode-tree.
+ * Transforms VSCodeLocation[] into a nested filesystem-like structure required by vscode-tree.
  */
 function buildTreeData(refs: VSCodeLocation[]): TreeItemData[] {
-	const fileMap = new Map<string, { label: string; value: string; subItems: TreeItemData[] }>();
+	// Step 1: Collect all file paths and organize references by file
+	const fileRefMap = new Map<string, VSCodeLocation[]>();
+	console.log("Building tree with refs count:", refs.length);
 
 	for (const ref of refs) {
 		const filePath = ref.uri.path;
-		const fileName = filePath.substring(filePath.lastIndexOf('/') + 1); // Basic filename extraction
-		const lineNum = ref.range[0].line + 1; // 1-based line number
-		const charNum = ref.range[0].character + 1;
-
-		if (!fileMap.has(filePath)) {
-			fileMap.set(filePath, {
-				label: fileName, // Display filename as top-level node
-				value: filePath, // Store full path in value
-				subItems: []
-			});
+		if (!fileRefMap.has(filePath)) {
+			fileRefMap.set(filePath, []);
 		}
-
-		// Add reference line as a sub-item
-		fileMap.get(filePath)?.subItems.push({
-			label: `Line ${lineNum}:${charNum}`,
-			value: `${filePath}#${lineNum}:${charNum}`, // Unique value for the specific reference
-			icons: { leaf: 'symbol-field' } // Example icon
-		});
+		fileRefMap.get(filePath)?.push(ref);
 	}
 
-	// Convert map values to array and add icons
-	const treeData: TreeItemData[] = Array.from(fileMap.values()).map(fileNode => ({
-		...fileNode,
-		icons: { branch: 'folder', open: 'folder-opened' },
-		// Sort sub-items (references) by line number
-		subItems: fileNode.subItems.sort((a, b) => {
-			const lineA = parseInt(a.label.match(/Line (\d+):/)?.[1] || '0');
-			const lineB = parseInt(b.label.match(/Line (\d+):/)?.[1] || '0');
-			return lineA - lineB;
-		})
-	}));
+	// Step 2: Create directory structure
+	const rootNode: { [key: string]: any } = {};
 
-	// Sort top-level file nodes alphabetically by label (filename)
-	treeData.sort((a, b) => a.label.localeCompare(b.label));
+	// Process each file path to build the directory structure
+	for (const [filePath, fileRefs] of fileRefMap.entries()) {
+		// Skip paths with invalid format
+		if (!filePath || filePath === '/') {
+			continue;
+		}
 
-	return treeData;
+		// Remove leading slash and split path into components
+		const pathParts = filePath.startsWith('/') ? filePath.substring(1).split('/') : filePath.split('/');
+		
+		// Skip empty paths
+		if (pathParts.length === 0 || (pathParts.length === 1 && pathParts[0] === '')) {
+			continue;
+		}
+
+		// Build the tree structure
+		let currentLevel = rootNode;
+		
+		// Process directories (all parts except the last one which is the file)
+		for (let i = 0; i < pathParts.length - 1; i++) {
+			const part = pathParts[i];
+			if (!part) { continue; } // Skip empty parts
+			
+			if (!currentLevel[part]) {
+				// Create directory path by joining parts up to this level
+				const dirPathParts = pathParts.slice(0, i + 1);
+				const dirPath = '/' + dirPathParts.join('/');
+				
+				currentLevel[part] = {
+					isDirectory: true,
+					children: {},
+					path: dirPath,
+					fullPath: dirPath // Store actual filesystem path for filtering
+				};
+			}
+			currentLevel = currentLevel[part].children;
+		}
+		
+		// Add the file with its references
+		const fileName = pathParts[pathParts.length - 1];
+		currentLevel[fileName] = {
+			isDirectory: false,
+			refs: fileRefs,
+			path: filePath,
+			fullPath: filePath // Store actual filesystem path for filtering
+		};
+	}
+
+	// Step 3: Convert the tree structure to the format required by vscode-tree
+	function convertToTreeData(node: { [key: string]: any }, nodePath: string = ''): TreeItemData[] {
+		const result: TreeItemData[] = [];
+		
+		// Sort keys - directories first, then files, both alphabetically
+		const keys = Object.keys(node).sort((a, b) => {
+			const aIsDir = node[a].isDirectory;
+			const bIsDir = node[b].isDirectory;
+			
+			// If both are directories or both are files, sort alphabetically
+			if (aIsDir === bIsDir) {
+				return a.localeCompare(b);
+			}
+			
+			// Directories come before files
+			return aIsDir ? -1 : 1;
+		});
+		
+		for (const key of keys) {
+			const item = node[key];
+			
+			if (item.isDirectory) {
+				// Directory node - check if we can compress this path
+				let currentItem = item;
+				let currentKey = key;
+				let pathSegments = [currentKey];
+				let fullPath = item.fullPath; // Store the actual filesystem path
+				
+				// Look for single-child directories that can be merged
+				while (currentItem.isDirectory) {
+					const childKeys = Object.keys(currentItem.children);
+					
+					// If we have exactly one child and it's a directory, merge it
+					if (childKeys.length === 1) {
+						const childKey = childKeys[0];
+						const childItem = currentItem.children[childKey];
+						
+						// Only merge if the child is also a directory
+						if (childItem.isDirectory) {
+							pathSegments.push(childKey);
+							fullPath = childItem.fullPath; // Update to the deepest path
+							currentItem = childItem;
+							currentKey = childKey;
+							continue;
+						}
+					}
+					
+					// If we can't merge further, exit the loop
+					break;
+				}
+				
+				// Create merged label and get final children
+				const mergedLabel = pathSegments.join('/') + '/';
+				const finalChildren = currentItem.children;
+				
+				// Create the merged directory node
+				const treeItem: TreeItemData = {
+					label: mergedLabel,
+					value: fullPath, // Store the actual filesystem path for filtering
+					icons: { branch: 'folder', open: 'folder-opened' },
+					subItems: convertToTreeData(finalChildren, fullPath)
+				};
+				result.push(treeItem);
+			} else {
+				// File node
+				const fileRefs = item.refs;
+				const filePath = item.fullPath;
+				
+				// Create reference line items
+				const refItems: TreeItemData[] = fileRefs.map((ref: VSCodeLocation) => {
+					const lineNum = ref.range[0].line + 1; // 1-based line number
+					const charNum = ref.range[0].character + 1;
+					return {
+						label: `Line ${lineNum}:${charNum}`,
+						value: `${filePath}#${lineNum}:${charNum}`, // Unique value for the specific reference
+						icons: { leaf: 'symbol-field' } // Icon for reference lines
+					};
+				}).sort((a: TreeItemData, b: TreeItemData) => {
+					// Sort references by line number
+					const lineA = parseInt(a.label.match(/Line (\d+):/)?.[1] || '0');
+					const lineB = parseInt(b.label.match(/Line (\d+):/)?.[1] || '0');
+					return lineA - lineB;
+				});
+				
+				// Create file node with reference subitems
+				const fileNode: TreeItemData = {
+					label: key,
+					value: filePath, // Store full path for filtering
+					icons: { branch: 'file-code', leaf: 'file-code' },
+					subItems: refItems
+				};
+				result.push(fileNode);
+			}
+		}
+		
+		return result;
+	}
+
+	// Convert the root directory into TreeItemData
+	return convertToTreeData(rootNode);
 }
+
+declare const acquireVsCodeApi: () => any;
 
 // NOTE: For some reason the webview has issues, like window event listener not working if the code is not wrapped in a function like this.
 (function () {
@@ -116,22 +255,45 @@ function buildTreeData(refs: VSCodeLocation[]): TreeItemData[] {
 	});
 
 	// Listen for selection changes in the tree
-	referenceTree.addEventListener('vsc-select', (event: any) => {
-		// The detail contains information about the selected item
-		const selectedItem = event.detail?.item;
-		console.log("Tree selection changed:", selectedItem);
+	referenceTree.addEventListener('vsc-tree-select', (event: CustomEvent<VscTreeSelectEventDetail>) => {
+		// Get details from the event
+		const detail = event.detail;
+		console.log("Tree selection changed:", detail);
 
-		if (selectedItem) {
-			// Check if the selected item is a file node (has subItems) or a reference node
-			// We stored the full file path in the 'value' of the file nodes.
-			// Reference nodes have value like 'filepath#line:char'
-			const isFileNode = selectedItem.value && !selectedItem.value.includes('#');
-			const filePath = isFileNode ? selectedItem.value : null;
-
-			postMessage({ type: 'fileSelected', path: filePath });
+		if (detail) {
+			// Check if the selected item is a directory (branch) or file/reference
+			const isDirectoryNode = detail.itemType === 'branch' && detail.label.endsWith('/');
+			const isFileNode = !isDirectoryNode && !detail.value.includes('#');
+			const isReferenceNode = !isDirectoryNode && !isFileNode;
+			let path = detail.path.split('/').map(x => parseInt(x));
+			let item = referenceTree.getItemByPath(path);
+			if (item) {
+			  item.open = true;
+			}
+			// Path to filter by - for directories or files
+			const filterPath = isReferenceNode ? null : detail.value;
+			
+			console.log("Selected item details:", {
+				label: detail.label,
+				value: detail.value,
+				path: detail.path,
+				itemType: detail.itemType,
+				isDirectoryNode,
+				isFileNode,
+				isReferenceNode,
+				filterPath
+			});
+			
+			postMessage({ 
+				type: 'vscSelectEvent', 
+				path: filterPath,
+				isDirectory: isDirectoryNode,
+				isFile: isFileNode,
+				isReference: isReferenceNode
+			});
 		} else {
 			// Handle deselection if necessary, maybe show all filtered refs?
-			postMessage({ type: 'fileSelected', path: null }); // Send null path for "all files"
+			postMessage({ type: 'vscSelectEvent', path: null, isDirectory: false, isFile: false, isReference: false });
 		}
 	});
 
