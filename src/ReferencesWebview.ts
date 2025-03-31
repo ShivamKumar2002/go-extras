@@ -265,12 +265,7 @@ declare const acquireVsCodeApi: () => any;
 			const isDirectoryNode = detail.itemType === 'branch' && detail.label.endsWith('/');
 			const isFileNode = !isDirectoryNode && !detail.value.includes('#');
 			const isReferenceNode = !isDirectoryNode && !isFileNode;
-			let item = referenceTree.getItemByPath(detail.path.split('/'));
-			if (item) {
-			  item.open = true;
-			}
-			// Path to filter by - for directories or files
-			const filterPath = isReferenceNode ? null : detail.value;
+			const filterPath = detail.value;
 			
 			console.log("Selected item details:", {
 				label: detail.label,
