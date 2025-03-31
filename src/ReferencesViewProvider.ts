@@ -112,6 +112,24 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 
 			case 'vscSelectEvent':
 				console.log('Tree item selected:', message.path);
+				
+				// If this is a reference node (leaf), navigate directly to the position
+				if (message.isReference) {
+					// Close any existing peek view first
+					this._hidePeekView();
+
+					console.log("Navigating to reference location:", message.path);
+					
+					// Open the file and navigate to the specified location
+					const [filePath, filePosition] = message.path.split('#');
+					const [line, char] = filePosition.split(':');
+					const position = new vscode.Position(Number(line) - 1, Number(char) - 1);
+					const location = new vscode.Location(vscode.Uri.file(filePath), position);
+					await this._openFileAtLocation(location);
+					return;
+				}
+				
+				// For directories and files, use the existing filtering mechanism
 				await this.filterAndUpdatePeekView(message.path || undefined, message.isDirectory || false); 
 				return;
 
@@ -297,6 +315,23 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 
 			default:
 				return Classification.Unknown;
+		}
+	}
+
+	/**
+	 * Opens a file at the specified location
+	 */
+	private async _openFileAtLocation(location: vscode.Location) {
+		try {
+			// Open the document and show it in the editor with the cursor at the specified position
+			const document = await vscode.workspace.openTextDocument(location.uri);
+			await vscode.window.showTextDocument(document, {
+				selection: location.range,
+				viewColumn: vscode.ViewColumn.Active
+			});
+		} catch (error) {
+			console.error("Error opening file at location:", error);
+			vscode.window.showErrorMessage(`Error navigating to reference: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	}
 
