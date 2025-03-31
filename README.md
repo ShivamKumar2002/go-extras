@@ -190,6 +190,14 @@ Contributions are welcome and appreciated! Here's how you can contribute:
 
 Please ensure your code follows the project's coding standards and includes appropriate tests.
 
+
+## Project Structure Notes
+
+### Generated Directories
+
+* **memory-bank/**: This directory is automatically generated and managed by the Roo Code/Cline.
+
+
 ## License
 
 This extension is licensed under the [MIT License](LICENSE).
