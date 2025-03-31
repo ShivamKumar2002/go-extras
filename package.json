@@ -5,6 +5,14 @@
   "publisher": "shivamkumar",
   "version": "1.0.0",
   "icon": "images/logo.png",
+  "keywords": [
+    "go",
+    "golang",
+    "references",
+    "filtering",
+    "gopls",
+    "filter references"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/ShivamKumar2002/go-extras.git"
