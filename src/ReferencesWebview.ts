@@ -265,8 +265,7 @@ declare const acquireVsCodeApi: () => any;
 			const isDirectoryNode = detail.itemType === 'branch' && detail.label.endsWith('/');
 			const isFileNode = !isDirectoryNode && !detail.value.includes('#');
 			const isReferenceNode = !isDirectoryNode && !isFileNode;
-			let path = detail.path.split('/').map(x => parseInt(x));
-			let item = referenceTree.getItemByPath(path);
+			let item = referenceTree.getItemByPath(detail.path.split('/'));
 			if (item) {
 			  item.open = true;
 			}
