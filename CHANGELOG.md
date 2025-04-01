@@ -6,6 +6,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [1.1.0] - 2025-04-01
 
+**Go Extras 1.1.0: Improved UI with custom icons, wider VSCode compatibility, and better performance**
+
 ### Added
 
 - Custom SVG logo for Go Extras panel and references view icons
@@ -24,6 +26,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 ### Maintenance
 
 - Updated various dependencies (@types/node, npm-run-all2, typescript-eslint, esbuild)
+
+**Full Changelog**: https://github.com/ShivamKumar2002/go-extras/compare/v1.0.0...v1.1.0
 
 
 ## [1.0.0] - 2025-04-01
