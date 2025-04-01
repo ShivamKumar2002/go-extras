@@ -4,6 +4,28 @@ All notable changes to the "go-extras" extension will be documented in this file
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.0] - 2025-04-01
+
+### Added
+
+- Custom SVG logo for Go Extras panel and references view icons
+- Added `retainContextWhenHidden` option to webview view provider registration for improved performance
+
+### Changed
+
+- Downgraded VSCode engine version requirement from 1.98.0 to 1.75.0 for wider compatibility
+
+### Documentation
+
+- Added semantic highlighting configuration instructions for gopls in README
+- Updated README with improved installation and usage instructions
+- Added keywords in package.json for better marketplace visibility
+
+### Maintenance
+
+- Updated various dependencies (@types/node, npm-run-all2, typescript-eslint, esbuild)
+
+
 ## [1.0.0] - 2025-04-01
 
 ### Added

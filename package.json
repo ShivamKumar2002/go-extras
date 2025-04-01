@@ -3,7 +3,7 @@
   "displayName": "Go Extras",
   "description": "Advanced Go development features that extend beyond the official VS Code Go extension.",
   "publisher": "shivamkumar",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "icon": "images/logo.png",
   "keywords": [
     "go",
