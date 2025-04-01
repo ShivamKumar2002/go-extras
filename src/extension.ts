@@ -8,7 +8,7 @@ export function activate(context: vscode.ExtensionContext) {
 	// Instantiate and register the Webview View Provider
 	const provider = new ReferencesViewProvider(context, context.extensionUri);
 	context.subscriptions.push(
-		vscode.window.registerWebviewViewProvider(ReferencesViewProvider.viewType, provider)
+		vscode.window.registerWebviewViewProvider(ReferencesViewProvider.viewType, provider, { webviewOptions: { retainContextWhenHidden: true } })
 	);
 
 	// Register the command
@@ -67,4 +67,4 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 // This method is called when your extension is deactivated
-export function deactivate() {}
+export function deactivate() { }
