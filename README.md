@@ -75,7 +75,16 @@ You can activate the Filtered References feature in several ways when your curso
 
 * Visual Studio Code.
 * **Go Extension:** The official `golang.go` extension must be installed and enabled, as Go Extras relies on it for finding and classifying references via the Go Language Server (`gopls`).
-
+* **Semantic Highlighting:** This extension requires semantic highlighting to be enabled in gopls. To enable it:
+  1. Open VS Code Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`)
+  2. Search for **"Preferences: Open User Settings (JSON)"** and select it.
+  3. Add the following configuration to your `settings.json` file:
+     ```json
+     "gopls": {
+       "ui.semanticTokens": true
+     }
+     ```
+  4. Save the file and restart VS Code for changes to take effect.
 
 ## Development and Build Process
 
