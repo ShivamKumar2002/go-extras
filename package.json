@@ -21,7 +21,7 @@
     "url": "https://github.com/ShivamKumar2002/go-extras/issues"
   },
   "engines": {
-    "vscode": "^1.98.0"
+    "vscode": "^1.75.0"
   },
   "categories": [
     "Programming Languages"
