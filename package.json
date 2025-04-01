@@ -98,7 +98,7 @@
     "@vscode/test-electron": "2.4.1",
     "esbuild": "0.25.2",
     "eslint": "9.23.0",
-    "npm-run-all2": "5.0.0",
+    "npm-run-all2": "7.0.2",
     "typescript": "5.8.2"
   },
   "dependencies": {
