@@ -102,7 +102,7 @@
     "typescript": "5.9.3"
   },
   "dependencies": {
-    "@vscode-elements/elements": "^1.14.0",
+    "@vscode-elements/elements": "^2.0.0",
     "@vscode/codicons": "^0.0.43"
   }
 }
