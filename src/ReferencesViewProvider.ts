@@ -9,18 +9,16 @@ enum Classification {
 }
 
 class FilterState {
-	read: boolean;
-	write: boolean;
-	text: boolean;
-
-	constructor(read?: boolean, write?: boolean, text?: boolean) {
-		this.read = read ?? true;
-		this.write = write ?? true;
-		this.text = text ?? true;
-	}
+	constructor(
+		readonly read = true,
+		readonly write = true,
+		readonly text = true,
+		readonly includeTests = false,
+	) {}
 
 	compare(other: FilterState): boolean {
-		return this.read === other.read && this.write === other.write && this.text === other.text;
+		return this.read === other.read && this.write === other.write && this.text === other.text
+			&& this.includeTests === other.includeTests;
 	};
 }
 
@@ -93,22 +91,23 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 		console.log("Provider received message from webview:", message);
 		switch (message.type) {
 			case 'webviewReady':
+				await this._postMessage({ type: 'updateFilters', filters: this._filterState });
 				// Webview is ready, send initial data if we have it
 				if (this._currentRefs.length > 0) {
 					await this.filterAndUpdatePeekView(undefined, undefined, true); // Show initial peek view
 				}
 				return;
 
-			case 'filtersChanged':
+			case 'filtersChanged': {
 				if (this._filterState.compare(message.filters)) {
 					return;
 				}
-				this._filterState.read = message.filters.read;
-				this._filterState.write = message.filters.write;
-				this._filterState.text = message.filters.text;
+				const { read, write, text, includeTests } = message.filters;
+				this._filterState = new FilterState(read, write, text, includeTests);
 				console.log('Provider received filters changed:', this._filterState);
 				await this.filterAndUpdatePeekView(undefined, undefined, true);
 				return;
+			}
 
 			case 'vscSelectEvent':
 				console.log('Tree item selected:', message.path);
@@ -176,15 +175,17 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 				this._hidePeekView();
 
 				// Filter based on the latest _filterState and optional filePath
+				const filters = this._filterState;
 				const filteredLocations = await this._filterReferences(filePath, isDirectory);
-
-				if (updateWebview) {
+				// Filters can change while references are being classified. Only publish results for the current selection.
+				if (updateWebview && filters === this._filterState) {
 					// update webview tree with filtered locations
 					await this._postMessage({ type: 'updateRefs', refs: filteredLocations });
 				}
 
-				// Update the Peek View only
-				this._showPeekView(filteredLocations);
+				if (filters === this._filterState) {
+					this._showPeekView(filteredLocations);
+				}
 
 			} catch (error) {
 				console.error("Error filtering references:", error);
@@ -211,6 +212,10 @@ export class ReferencesViewProvider implements vscode.WebviewViewProvider {
 		const filtered: vscode.Location[] = [];
 
 		for (const loc of this._currentRefs) {
+			if (!this._filterState.includeTests && loc.uri.path.endsWith('_test.go')) {
+				continue;
+			}
+
 			// Filter by file path if provided
 			if (targetUri) {
 				if (isDirectory) {

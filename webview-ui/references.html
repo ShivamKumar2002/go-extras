@@ -29,10 +29,11 @@
 </head>
 
 <body>
-	<vscode-checkbox-group id="filter-group" aria-label="Reference Type Filters">
+	<vscode-checkbox-group id="filter-group" aria-label="Reference Filters">
 		<vscode-checkbox id="text-filter" label="Text" value="text" checked></vscode-checkbox>
 		<vscode-checkbox id="read-filter" label="Read" value="read" checked></vscode-checkbox>
 		<vscode-checkbox id="write-filter" label="Write" value="write" checked></vscode-checkbox>
+		<vscode-checkbox id="test-filter" label="Test" value="test" title="*_test.go"></vscode-checkbox>
 	</vscode-checkbox-group>
 
 	<vscode-tree id="reference-tree" indent-guides arrows>

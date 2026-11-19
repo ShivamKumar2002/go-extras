@@ -229,6 +229,7 @@ declare const acquireVsCodeApi: () => any;
 	const textFilter = document.getElementById('text-filter') as HTMLInputElement;
 	const readFilter = document.getElementById('read-filter') as HTMLInputElement;
 	const writeFilter = document.getElementById('write-filter') as HTMLInputElement;
+	const testFilter = document.getElementById('test-filter') as HTMLInputElement;
 	const referenceTree = document.getElementById('reference-tree') as any;
 
 	// --- State ---
@@ -249,6 +250,7 @@ declare const acquireVsCodeApi: () => any;
 			text: textFilter?.checked ?? false,
 			read: readFilter?.checked ?? false,
 			write: writeFilter?.checked ?? false,
+			includeTests: testFilter.checked,
 		};
 		console.log("Filters changed in webview:", filters);
 		postMessage({ type: 'filtersChanged', filters });
@@ -296,6 +298,12 @@ declare const acquireVsCodeApi: () => any;
 		const message = event.data; // The JSON data that the extension sent
 
 		switch (message.type) {
+			case 'updateFilters':
+				textFilter.checked = message.filters.text;
+				readFilter.checked = message.filters.read;
+				writeFilter.checked = message.filters.write;
+				testFilter.checked = message.filters.includeTests;
+				break;
 			case 'updateRefs':
 				currentReferences = message.refs as VSCodeLocation[];
 				if (referenceTree) {
